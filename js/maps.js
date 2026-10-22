@@ -1,7 +1,8 @@
 // MapLibre basemap with OpenFreeMap vector tiles (free, no API key), behind a
 // small interface the drawing code uses:
 //   toPixel(lat, lon) -> {x, y}, bounds() -> {s, w, n, e}, zoom(),
-//   onClick(cb(lat, lon)), onView(cb), setTheme(name), flyTo(lat, lon, zoom)
+//   onClick(cb(lat, lon)), onView(cb), setTheme(name), flyTo(lat, lon, zoom),
+//   fitBounds(points, padding)
 const STYLES = {
   dark: 'https://tiles.openfreemap.org/styles/dark',
   light: 'https://tiles.openfreemap.org/styles/positron',
@@ -33,22 +34,15 @@ export function createMap(el, view, theme) {
     zoom: () => map.getZoom(),
     onClick: (cb) => map.on('click', (e) => cb(e.lngLat.lat, e.lngLat.lng)),
     onView: (cb) => map.on('move', cb),
-    onMoveEnd: (cb) => map.on('moveend', cb),
     setTheme: (name) => map.setStyle(STYLES[name]),
     flyTo: (lat, lon, zoom) => map.flyTo({ center: [lon, lat], zoom, speed: 1.6 }),
-
-    // Resolves once every visible tile has loaded.
-    whenIdle: () => new Promise((resolve) => {
-      if (map.loaded() && map.areTilesLoaded()) resolve();
-      else map.once('idle', resolve);
-    }),
-
-    // Road geometry from the vector tiles currently loaded (OpenMapTiles schema).
-    roadFeatures: () => map.querySourceFeatures('openmaptiles', {
-      sourceLayer: 'transportation',
-      filter: ['in', ['get', 'class'], ['literal', ROAD_CLASSES]],
-    }),
+    fitBounds(points, padding) {
+      const lats = points.map((p) => p[0]);
+      const lons = points.map((p) => p[1]);
+      map.fitBounds(
+        [[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]],
+        { padding, maxZoom: 16, duration: 900 },
+      );
+    },
   };
 }
-
-const ROAD_CLASSES = ['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor', 'service'];
