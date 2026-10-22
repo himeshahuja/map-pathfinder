@@ -7,20 +7,20 @@ const ROAD_TYPES = [
   'motorway_link', 'trunk_link', 'primary_link', 'secondary_link', 'tertiary_link',
 ].join('|');
 
-// Public Overpass mirrors, fastest/most reliable first.
+// Public Overpass mirrors, most reliable first.
 const ENDPOINTS = [
-  'https://overpass.private.coffee/api/interpreter',
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
 ];
-const HEDGE_MS = 6000;     // start the next mirror if the current one hasn't answered by then
-const TIMEOUT_MS = 45000;  // give up on a single mirror after this
+const HEDGE_MS = 8000;     // start the next mirror if the current one hasn't answered by then
+const TIMEOUT_MS = 90000;  // give up on a single mirror after this
 
 // Hedged requests: mirrors are tried in order, overlapping when one is slow,
 // and the first successful response wins (the rest are aborted).
 export function fetchRoads({ s, w, n, e }) {
-  const query = `[out:json][timeout:45];way["highway"~"^(${ROAD_TYPES})$"](${s},${w},${n},${e});out geom qt;`;
+  const query = `[out:json][timeout:90];way["highway"~"^(${ROAD_TYPES})$"](${s},${w},${n},${e});out geom qt;`;
   const controllers = [];
 
   return new Promise((resolve, reject) => {

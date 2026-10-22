@@ -34,6 +34,7 @@ const state = {
   pathT: 1,
   run: null,
   raf: 0,
+  loading: false,
   results: new Map(),
   shownKey: null,
 };
@@ -340,6 +341,7 @@ function setPoint(which, lat, lon) {
 }
 
 function handleClick(lat, lon) {
+  if (state.loading) return;
   if (!state.graph) {
     setStatus('Load roads first: zoom in and press "Load roads in view".', 'warn');
     return;
@@ -375,6 +377,26 @@ function rebuildGraph() {
 
 const inBbox = ([lat, lon], b) => lat >= b.s && lat <= b.n && lon >= b.w && lon <= b.e;
 
+// The default view ships with its road network so the first load never
+// depends on a public Overpass server being up.
+async function loadBundled() {
+  setStatus('Loading roads…');
+  try {
+    const res = await fetch('data/charlottesville.json');
+    if (!res.ok) throw new Error(res.status);
+    const data = await res.json();
+    state.ways = data.ways;
+    state.bbox = data.bbox;
+    state.startLL = DEMO.start;
+    state.endLL = DEMO.end;
+    rebuildGraph();
+    startRun($('algo').value);
+  } catch (err) {
+    console.warn('Bundled roads unavailable, falling back to Overpass', err);
+    await loadRoads({ demo: true });
+  }
+}
+
 async function loadRoads({ demo = false } = {}) {
   if (state.map.zoom() < MIN_LOAD_ZOOM) {
     setStatus(`Zoom in a bit more (to level ${MIN_LOAD_ZOOM}+) to load roads.`, 'warn');
@@ -383,10 +405,16 @@ async function loadRoads({ demo = false } = {}) {
   stopRun();
   const btn = $('load');
   btn.disabled = true;
+  state.loading = true;
+  const t0 = Date.now();
+  const tick = setInterval(() => {
+    setStatus(`Loading roads from OpenStreetMap… ${Math.round((Date.now() - t0) / 1000)}s`);
+  }, 1000);
   setStatus('Loading roads from OpenStreetMap…');
   try {
     const bbox = state.map.bounds();
     state.ways = await fetchRoads(bbox);
+    clearInterval(tick);
     state.bbox = bbox;
     if (demo && inBbox(DEMO.start, bbox) && inBbox(DEMO.end, bbox)) {
       state.startLL = DEMO.start;
@@ -400,8 +428,11 @@ async function loadRoads({ demo = false } = {}) {
     setStatus(`Loaded ${g.n.toLocaleString()} road nodes. Click the map to set a start.`);
     if (ready()) startRun($('algo').value);
   } catch (err) {
+    clearInterval(tick);
     setStatus(`Couldn't load roads: ${err.message}. Try again in a moment.`, 'error');
   } finally {
+    clearInterval(tick);
+    state.loading = false;
     btn.disabled = false;
   }
 }
@@ -447,7 +478,7 @@ function init() {
   new ResizeObserver(resizeCanvases).observe($('map-wrap'));
   resizeCanvases();
 
-  loadRoads({ demo: true });
+  loadBundled();
 }
 
 init();
