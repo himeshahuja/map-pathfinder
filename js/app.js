@@ -1,19 +1,36 @@
-import { fetchRoads, buildGraph, nearestNode, pathLength, mercator } from './graph.js';
+import { buildGraph, waysFromFeatures, nearestNode, pathLength, mercator } from './graph.js';
 import { ALGORITHMS } from './algorithms.js';
 import { createMap } from './maps.js';
 
 // Default view: UVA Grounds to the Downtown Mall, Charlottesville.
-const DEFAULT_VIEW = { lat: 38.0335, lon: -78.4925, zoom: 15 };
+const DEFAULT_VIEW = { lat: 38.0335, lon: -78.4925, zoom: 14.6 };
 const DEMO = { start: [38.0356, -78.5034], end: [38.0302, -78.4801] };
-const MIN_LOAD_ZOOM = 14;
+const MIN_ROUTE_ZOOM = 13;     // below this the tiles drop residential streets
 const SPEEDS = [1, 2, 4, 8, 16, 32, 64, 128, 512, 4096]; // nodes settled per frame
+const THEME_KEY = 'mapPathfinder.theme';
 
-const COLORS = {
-  road: 'rgba(60, 64, 67, 0.28)',
-  explored: ['rgba(26, 115, 232, 0.8)', 'rgba(147, 52, 230, 0.8)'],
-  path: '#ff6d00',
-  start: '#188038',
-  end: '#d93025',
+// Keep in sync with the --c-* variables in style.css.
+const PALETTES = {
+  dark: {
+    road: 'rgba(255, 255, 255, 0.08)',
+    explored: ['rgba(56, 189, 248, 0.85)', 'rgba(232, 121, 249, 0.85)'],
+    path: '#ffb020',
+    casing: 'rgba(8, 10, 16, 0.9)',
+    glow: 'rgba(255, 176, 32, 0.7)',
+    start: '#22c55e',
+    end: '#f43f5e',
+    area: 'rgba(148, 163, 184, 0.45)',
+  },
+  light: {
+    road: 'rgba(60, 64, 67, 0.18)',
+    explored: ['rgba(26, 115, 232, 0.8)', 'rgba(147, 52, 230, 0.8)'],
+    path: '#ff6d00',
+    casing: '#ffffff',
+    glow: 'rgba(255, 109, 0, 0.35)',
+    start: '#188038',
+    end: '#d93025',
+    area: 'rgba(26, 115, 232, 0.45)',
+  },
 };
 
 const $ = (id) => document.getElementById(id);
@@ -38,6 +55,13 @@ const state = {
   results: new Map(),
   shownKey: null,
 };
+
+let theme = loadTheme();
+let C = PALETTES[theme];
+
+function loadTheme() {
+  try { return localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark'; } catch (_) { return 'dark'; }
+}
 
 // --- Canvas layers ----------------------------------------------------------
 
@@ -72,25 +96,40 @@ function updateView() {
 const px = (i) => state.graph.wx[i] * view.k + view.ox;
 const py = (i) => state.graph.wy[i] * view.k + view.oy;
 
-function strokeSegments(ctx, color, width, from, to, i0, i1, sideArr, side) {
+function llPx([lat, lon]) {
+  const m = mercator(lat, lon);
+  return { x: m.x * view.k + view.ox, y: m.y * view.k + view.oy };
+}
+
+function strokeExplored(ctx, i0, i1, side) {
   ctx.beginPath();
   for (let i = i0; i < i1; i++) {
-    if (sideArr && sideArr[i] !== side) continue;
-    const a = from[i];
-    const b = to[i];
+    if (state.exSide[i] !== side) continue;
+    const a = state.exFrom[i];
+    const b = state.exTo[i];
     ctx.moveTo(px(a), py(a));
     ctx.lineTo(px(b), py(b));
   }
-  ctx.strokeStyle = color;
-  ctx.lineWidth = width;
+  ctx.strokeStyle = C.explored[side];
+  ctx.lineWidth = 2.25;
   ctx.lineCap = 'round';
   ctx.stroke();
 }
 
 function drawExploredRange(i0, i1) {
-  for (const side of [0, 1]) {
-    strokeSegments(ctxE, COLORS.explored[side], 2.25, state.exFrom, state.exTo, i0, i1, state.exSide, side);
-  }
+  strokeExplored(ctxE, i0, i1, 0);
+  strokeExplored(ctxE, i0, i1, 1);
+}
+
+function strokeBbox(ctx, bbox, color) {
+  const nw = llPx([bbox.n, bbox.w]);
+  const se = llPx([bbox.s, bbox.e]);
+  ctx.save();
+  ctx.setLineDash([6, 6]);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(nw.x, nw.y, se.x - nw.x, se.y - nw.y);
+  ctx.restore();
 }
 
 function redrawExplored() {
@@ -106,30 +145,19 @@ function redrawExplored() {
     ctxE.moveTo(px(a), py(a));
     ctxE.lineTo(px(b), py(b));
   }
-  ctxE.strokeStyle = COLORS.road;
+  ctxE.strokeStyle = C.road;
   ctxE.lineWidth = 1;
   ctxE.stroke();
 
-  if (state.bbox) {
-    const nw = mercator(state.bbox.n, state.bbox.w);
-    const se = mercator(state.bbox.s, state.bbox.e);
-    ctxE.save();
-    ctxE.setLineDash([6, 6]);
-    ctxE.strokeStyle = 'rgba(26, 115, 232, 0.55)';
-    ctxE.lineWidth = 1.5;
-    ctxE.strokeRect(nw.x * view.k + view.ox, nw.y * view.k + view.oy, (se.x - nw.x) * view.k, (se.y - nw.y) * view.k);
-    ctxE.restore();
-  }
-
+  if (state.bbox) strokeBbox(ctxE, state.bbox, C.area);
   drawExploredRange(0, state.exFrom.length);
 }
 
-function drawMarker(node, color) {
-  if (node < 0) return;
-  const x = px(node);
-  const y = py(node);
+function drawMarker(node, ll, color) {
+  if (!ll) return;
+  const p = node >= 0 && state.graph ? { x: px(node), y: py(node) } : llPx(ll);
   ctxT.beginPath();
-  ctxT.arc(x, y, 8, 0, Math.PI * 2);
+  ctxT.arc(p.x, p.y, 8, 0, Math.PI * 2);
   ctxT.fillStyle = color;
   ctxT.fill();
   ctxT.lineWidth = 3;
@@ -139,26 +167,30 @@ function drawMarker(node, color) {
 
 function drawTop() {
   ctxT.clearRect(0, 0, cvTop.clientWidth, cvTop.clientHeight);
-  if (!state.graph) return;
+  if (!state.map) return;
 
   const path = state.path;
-  if (path && path.length > 1) {
+  if (path && path.length > 1 && state.graph) {
     const segs = Math.max(1, Math.floor(state.pathT * (path.length - 1)));
     ctxT.beginPath();
     ctxT.moveTo(px(path[0]), py(path[0]));
     for (let i = 1; i <= segs; i++) ctxT.lineTo(px(path[i]), py(path[i]));
     ctxT.lineJoin = 'round';
     ctxT.lineCap = 'round';
-    ctxT.strokeStyle = '#fff';
+    ctxT.strokeStyle = C.casing;
     ctxT.lineWidth = 9;
     ctxT.stroke();
-    ctxT.strokeStyle = COLORS.path;
+    ctxT.save();
+    ctxT.shadowColor = C.glow;
+    ctxT.shadowBlur = 14;
+    ctxT.strokeStyle = C.path;
     ctxT.lineWidth = 5;
     ctxT.stroke();
+    ctxT.restore();
   }
 
-  drawMarker(state.start, COLORS.start);
-  drawMarker(state.end, COLORS.end);
+  drawMarker(state.start, state.startLL, C.start);
+  drawMarker(state.end, state.endLL, C.end);
 }
 
 let redrawQueued = false;
@@ -273,6 +305,95 @@ function compareAll() {
   setStatus('Compared every algorithm. Click a row to replay it.');
 }
 
+// --- Road data ----------------------------------------------------------------
+
+const inBbox = ([lat, lon], b) => !!b && lat >= b.s && lat <= b.n && lon >= b.w && lon <= b.e;
+
+function snapPoints() {
+  const g = state.graph;
+  state.start = state.startLL && inBbox(state.startLL, state.bbox) ? nearestNode(g, ...state.startLL) : -1;
+  state.end = state.endLL && inBbox(state.endLL, state.bbox) ? nearestNode(g, ...state.endLL) : -1;
+}
+
+function rebuildGraph() {
+  stopRun();
+  state.graph = buildGraph(state.ways, $('oneway').checked);
+  snapPoints();
+  state.results.clear();
+  renderResults();
+  clearSearch();
+  updateButtons();
+}
+
+// Builds the graph from the road geometry in the vector tiles on screen, so
+// routing works anywhere without a separate road-data download.
+async function buildFromView() {
+  if (state.map.zoom() < MIN_ROUTE_ZOOM) {
+    setStatus('Zoom in to street level to route.', 'warn');
+    return false;
+  }
+  state.loading = true;
+  try {
+    await state.map.whenIdle();
+    const ways = waysFromFeatures(state.map.roadFeatures());
+    if (!ways.length) {
+      setStatus('No roads in view here.', 'warn');
+      return false;
+    }
+    state.ways = ways;
+    state.bbox = state.map.bounds();
+    rebuildGraph();
+    return true;
+  } finally {
+    state.loading = false;
+  }
+}
+
+async function loadDemo() {
+  setStatus('Loading roads…');
+  state.startLL = DEMO.start;
+  state.endLL = DEMO.end;
+  if (await buildFromView()) startRun($('algo').value);
+}
+
+async function handleClick(lat, lon) {
+  if (state.loading) return;
+  const ll = [lat, lon];
+
+  // First click (or a click after a finished route) sets a new start.
+  if (!state.startLL || state.endLL) {
+    state.startLL = ll;
+    state.endLL = null;
+    state.start = state.graph && inBbox(ll, state.bbox) ? nearestNode(state.graph, lat, lon) : -1;
+    state.end = -1;
+    state.results.clear();
+    renderResults();
+    clearSearch();
+    updateButtons();
+    setStatus('Start set. Now click the goal.');
+    return;
+  }
+
+  if (!inBbox(state.startLL, state.map.bounds())) {
+    setStatus('Keep the start on screen when you pick the goal.', 'warn');
+    return;
+  }
+
+  state.endLL = ll;
+  drawTop();
+  if (!await buildFromView()) {
+    state.endLL = null;
+    drawTop();
+    return;
+  }
+
+  state.results.clear();
+  renderResults();
+  updateButtons();
+  if (ready()) startRun($('algo').value);
+  else setStatus('No roads near one of those points. Try clicking closer to a street.', 'warn');
+}
+
 // --- UI ---------------------------------------------------------------------
 
 const fmtKm = (m) => (m == null ? 'n/a' : `${(m / 1000).toFixed(2)} km`);
@@ -334,106 +455,30 @@ function updateButtons() {
   $('compare').disabled = !ok;
 }
 
-function setPoint(which, lat, lon) {
-  const node = nearestNode(state.graph, lat, lon);
-  if (which === 'start') { state.startLL = [lat, lon]; state.start = node; }
-  else { state.endLL = [lat, lon]; state.end = node; }
+function applyTheme(next, { updateMap = true } = {}) {
+  theme = next;
+  C = PALETTES[theme];
+  document.documentElement.dataset.theme = theme;
+  document.querySelectorAll('[data-theme-btn]').forEach((b) => b.classList.toggle('on', b.dataset.themeBtn === theme));
+  try { localStorage.setItem(THEME_KEY, theme); } catch (_) {}
+  if (updateMap && state.map) state.map.setTheme(theme);
+  redrawAll();
 }
 
-function handleClick(lat, lon) {
-  if (state.loading) return;
-  if (!state.graph) {
-    setStatus('Load roads first: zoom in and press "Load roads in view".', 'warn');
-    return;
-  }
-  if (state.start < 0 || state.end >= 0) {
-    setPoint('start', lat, lon);
-    state.end = -1;
-    state.endLL = null;
-    state.results.clear();
-    renderResults();
-    clearSearch();
-    setStatus('Start set. Click again to set the goal.');
-  } else {
-    setPoint('end', lat, lon);
-    state.results.clear();
-    startRun($('algo').value);
-  }
-  updateButtons();
-  drawTop();
-}
-
-function rebuildGraph() {
-  stopRun();
-  state.graph = buildGraph(state.ways, $('oneway').checked);
-  // Re-snap any chosen points onto the new graph.
-  state.start = state.startLL ? nearestNode(state.graph, ...state.startLL) : -1;
-  state.end = state.endLL ? nearestNode(state.graph, ...state.endLL) : -1;
-  state.results.clear();
-  renderResults();
-  clearSearch();
-  updateButtons();
-}
-
-const inBbox = ([lat, lon], b) => lat >= b.s && lat <= b.n && lon >= b.w && lon <= b.e;
-
-// The default view ships with its road network so the first load never
-// depends on a public Overpass server being up.
-async function loadBundled() {
-  setStatus('Loading roads…');
+async function searchPlace(query) {
+  setStatus(`Searching for “${query}”…`);
+  // Bias results toward what's on screen so "Main St" finds the local one.
+  const b = state.map.bounds();
+  const params = new URLSearchParams({ format: 'jsonv2', limit: '1', q: query, viewbox: `${b.w},${b.n},${b.e},${b.s}` });
   try {
-    const res = await fetch('data/charlottesville.json');
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?${params}`);
     if (!res.ok) throw new Error(res.status);
-    const data = await res.json();
-    state.ways = data.ways;
-    state.bbox = data.bbox;
-    state.startLL = DEMO.start;
-    state.endLL = DEMO.end;
-    rebuildGraph();
-    startRun($('algo').value);
+    const [hit] = await res.json();
+    if (!hit) { setStatus(`Couldn't find “${query}”.`, 'warn'); return; }
+    state.map.flyTo(+hit.lat, +hit.lon, 15);
+    setStatus(`${hit.display_name.split(',').slice(0, 2).join(',')}. Click a start, then a goal.`);
   } catch (err) {
-    console.warn('Bundled roads unavailable, falling back to Overpass', err);
-    await loadRoads({ demo: true });
-  }
-}
-
-async function loadRoads({ demo = false } = {}) {
-  if (state.map.zoom() < MIN_LOAD_ZOOM) {
-    setStatus(`Zoom in a bit more (to level ${MIN_LOAD_ZOOM}+) to load roads.`, 'warn');
-    return;
-  }
-  stopRun();
-  const btn = $('load');
-  btn.disabled = true;
-  state.loading = true;
-  const t0 = Date.now();
-  const tick = setInterval(() => {
-    setStatus(`Loading roads from OpenStreetMap… ${Math.round((Date.now() - t0) / 1000)}s`);
-  }, 1000);
-  setStatus('Loading roads from OpenStreetMap…');
-  try {
-    const bbox = state.map.bounds();
-    state.ways = await fetchRoads(bbox);
-    clearInterval(tick);
-    state.bbox = bbox;
-    if (demo && inBbox(DEMO.start, bbox) && inBbox(DEMO.end, bbox)) {
-      state.startLL = DEMO.start;
-      state.endLL = DEMO.end;
-    } else if (state.startLL && !inBbox(state.startLL, bbox)) {
-      state.startLL = null;
-      state.endLL = null;
-    }
-    rebuildGraph();
-    const g = state.graph;
-    setStatus(`Loaded ${g.n.toLocaleString()} road nodes. Click the map to set a start.`);
-    if (ready()) startRun($('algo').value);
-  } catch (err) {
-    clearInterval(tick);
-    setStatus(`Couldn't load roads: ${err.message}. Try again in a moment.`, 'error');
-  } finally {
-    clearInterval(tick);
-    state.loading = false;
-    btn.disabled = false;
+    setStatus(`Search failed (${err.message}).`, 'error');
   }
 }
 
@@ -458,27 +503,34 @@ function initControls() {
     renderResults();
     clearSearch();
     updateButtons();
-    setStatus('Cleared. Click the map to set a start.');
+    setStatus('Cleared. Click anywhere for a start.');
   });
-  $('load').addEventListener('click', () => loadRoads());
   $('oneway').addEventListener('change', () => {
     if (!state.ways) return;
     rebuildGraph();
     if (ready()) startRun($('algo').value);
+  });
+  $('search-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const q = $('search-input').value.trim();
+    if (q) searchPlace(q);
+  });
+  document.querySelectorAll('[data-theme-btn]').forEach((b) => {
+    b.addEventListener('click', () => applyTheme(b.dataset.themeBtn));
   });
 
   updateButtons();
 }
 
 function init() {
+  applyTheme(theme, { updateMap: false });
   initControls();
-  state.map = createMap($('map'), DEFAULT_VIEW);
+  state.map = createMap($('map'), DEFAULT_VIEW, theme);
   state.map.onClick(handleClick);
   state.map.onView(redrawAll);
   new ResizeObserver(resizeCanvases).observe($('map-wrap'));
   resizeCanvases();
-
-  loadBundled();
+  loadDemo();
 }
 
 init();

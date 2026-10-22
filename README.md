@@ -2,16 +2,16 @@
 
 Watch search algorithms race across real road networks.
 
-**Live demo:** https://meshhi13.github.io/map-pathfinder/
+**Live demo:** https://himeshahuja.github.io/map-pathfinder/
 
-![Bidirectional Dijkstra from UVA to the Downtown Mall](docs/screenshot.jpg)
+![Dijkstra exploring downtown Richmond](docs/screenshot.jpg)
 
 ## How to use
 
-- Pan to anywhere in the world, zoom to street level, and press **Load roads in view**. This pulls the road network from OpenStreetMap.
-- Click the map once to set the start and again to set the goal. The selected algorithm runs as soon as both are set.
+- Click anywhere for a start, then click a goal. The route runs right away on the streets in view.
+- **Jump to a place** to search any city or address.
 - **Compare all** runs every algorithm and lists nodes visited, path length (with how far each is over the shortest), and compute time. Click a row to replay that algorithm.
-- Toggle **Respect one-way streets** to search with or without real traffic direction.
+- Toggle **Respect one-way streets** to search with or without real traffic direction, and switch between dark and light maps.
 
 ## Algorithms
 
@@ -26,12 +26,12 @@ Watch search algorithms race across real road networks.
 
 ## How it works
 
-- **Road data:** the [Overpass API](https://wiki.openstreetmap.org/wiki/Overpass_API) returns every drivable `highway` way in the current view. Requests are hedged across several public mirrors and the first one to answer wins.
-- **Graph:** every OSM node on a road becomes a vertex, and each segment becomes an edge weighted by its haversine length. One-way, reverse one-way, and roundabout tags set edge direction. Clicks snap to the largest connected component.
+- **Road data:** the basemap is [MapLibre](https://maplibre.org/) drawing [OpenFreeMap](https://openfreemap.org/) vector tiles (OpenMapTiles schema). The routing graph is built from the road geometry in the tiles already loaded on screen, so routing needs no separate download and works anywhere.
+- **Graph:** tile vertices are merged by position (tiles share a global coordinate grid), and each segment becomes an edge weighted by its haversine length. The tiles' one-way flags set edge direction. Clicks snap to the largest connected component.
 - **Algorithms** (`js/algorithms.js`) are generators that yield each node as it is settled, so the UI can animate any of them step by step.
-- **Rendering:** everything is drawn on canvas layers over Leaflet. Nodes are pre-projected to Web Mercator, so panning redraws thousands of segments without per-node map API calls.
+- **Rendering:** everything is drawn on canvas layers over the map. Nodes are pre-projected to Web Mercator, so panning redraws thousands of segments without per-node map API calls.
 
-No build step and no dependencies beyond Leaflet from a CDN. To run locally:
+No build step and no dependencies beyond MapLibre GL from a CDN. To run locally:
 
 ```sh
 python3 -m http.server 8000

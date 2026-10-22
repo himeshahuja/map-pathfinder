@@ -1,72 +1,4 @@
-// Fetches the road network from OpenStreetMap (Overpass API) and turns it
-// into a weighted graph of nodes (intersections and shape points).
-
-const ROAD_TYPES = [
-  'motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'unclassified',
-  'residential', 'living_street', 'service', 'road',
-  'motorway_link', 'trunk_link', 'primary_link', 'secondary_link', 'tertiary_link',
-].join('|');
-
-// Public Overpass mirrors, most reliable first.
-const ENDPOINTS = [
-  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
-  'https://overpass.private.coffee/api/interpreter',
-  'https://overpass-api.de/api/interpreter',
-  'https://overpass.kumi.systems/api/interpreter',
-];
-const HEDGE_MS = 8000;     // start the next mirror if the current one hasn't answered by then
-const TIMEOUT_MS = 90000;  // give up on a single mirror after this
-
-// Hedged requests: mirrors are tried in order, overlapping when one is slow,
-// and the first successful response wins (the rest are aborted).
-export function fetchRoads({ s, w, n, e }) {
-  const query = `[out:json][timeout:90];way["highway"~"^(${ROAD_TYPES})$"](${s},${w},${n},${e});out geom qt;`;
-  const controllers = [];
-
-  return new Promise((resolve, reject) => {
-    let failed = 0;
-    let settled = false;
-    let lastErr = null;
-    let next = 0;
-    let hedgeTimer = null;
-
-    const launch = () => {
-      if (settled || next >= ENDPOINTS.length) return;
-      const url = ENDPOINTS[next++];
-      const ctl = new AbortController();
-      controllers.push(ctl);
-      const timeout = setTimeout(() => ctl.abort(), TIMEOUT_MS);
-      clearTimeout(hedgeTimer);
-      hedgeTimer = setTimeout(launch, HEDGE_MS);
-
-      fetch(url, { method: 'POST', body: new URLSearchParams({ data: query }), signal: ctl.signal })
-        .then(async (res) => {
-          if (!res.ok) throw new Error(`${res.status} from ${new URL(url).host}`);
-          const json = await res.json();
-          if (settled) return;
-          settled = true;
-          clearTimeout(hedgeTimer);
-          controllers.forEach((c) => c !== ctl && c.abort());
-          resolve(json.elements.filter((el) => el.type === 'way' && el.geometry && el.nodes));
-        })
-        .catch((err) => {
-          if (settled) return;
-          lastErr = err.name === 'AbortError' ? new Error(`timed out at ${new URL(url).host}`) : err;
-          failed++;
-          if (failed === ENDPOINTS.length) {
-            settled = true;
-            clearTimeout(hedgeTimer);
-            reject(lastErr);
-          } else {
-            launch(); // fail fast: don't wait for the hedge timer
-          }
-        })
-        .finally(() => clearTimeout(timeout));
-    };
-
-    launch();
-  });
-}
+// Turns road geometry into a weighted graph of nodes (intersections and shape points).
 
 export function haversine(lat1, lon1, lat2, lon2) {
   const R = 6371008.8;
@@ -118,7 +50,11 @@ export function buildGraph(ways, respectOneway) {
     return i;
   };
 
+  const seen = new Set();
   const addEdge = (a, b, w) => {
+    const key = `${a},${b}`;
+    if (seen.has(key)) return;
+    seen.add(key);
     adj[a].push([b, w]);
     radj[b].push([a, w]);
   };
@@ -132,7 +68,7 @@ export function buildGraph(ways, respectOneway) {
       const cur = nodeFor(way.nodes[k], p);
       if (prev >= 0) {
         const w = haversine(lat[prev], lon[prev], lat[cur], lon[cur]);
-        roads.push(prev, cur);
+        if (!seen.has(`${prev},${cur}`) && !seen.has(`${cur},${prev}`)) roads.push(prev, cur);
         if (dir !== -1) addEdge(prev, cur, w);
         if (dir !== 1) addEdge(cur, prev, w);
       }
@@ -209,4 +145,30 @@ export function pathLength(g, path) {
     total += haversine(g.lat[path[i - 1]], g.lon[path[i - 1]], g.lat[path[i]], g.lon[path[i]]);
   }
   return total;
+}
+
+// Vector tiles have no node ids, so vertices are merged by position. Tile
+// coordinates sit on a global grid (~2.4 m at z14), so the same road vertex
+// in neighbouring tiles lands in the same ~1 m bucket.
+export function waysFromFeatures(features) {
+  const key = ([lon, lat]) => `${Math.round(lon * 1e5)},${Math.round(lat * 1e5)}`;
+  const ways = [];
+  for (const f of features) {
+    const g = f.geometry;
+    const lines = g.type === 'LineString' ? [g.coordinates] : g.type === 'MultiLineString' ? g.coordinates : [];
+    const p = f.properties || {};
+    const tags = { highway: p.class };
+    if (p.oneway === 1 || p.oneway === '1') tags.oneway = 'yes';
+    else if (p.oneway === -1 || p.oneway === '-1') tags.oneway = '-1';
+    else tags.oneway = 'no';
+    for (const line of lines) {
+      if (line.length < 2) continue;
+      ways.push({
+        nodes: line.map(key),
+        geometry: line.map(([lon, lat]) => ({ lat, lon })),
+        tags,
+      });
+    }
+  }
+  return ways;
 }

@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Map Pathfinder</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -16,9 +16,20 @@
 
   <aside id="panel">
     <header>
-      <h1>Map Pathfinder</h1>
-      <p class="hint">Search algorithms racing across real road networks.</p>
+      <div>
+        <h1>Map Pathfinder</h1>
+        <p class="hint">Search algorithms racing across real road networks.</p>
+      </div>
+      <div class="theme-toggle" role="group" aria-label="Map theme">
+        <button data-theme-btn="dark" aria-label="Dark map">Dark</button>
+        <button data-theme-btn="light" aria-label="Light map">Light</button>
+      </div>
     </header>
+
+    <form id="search-form" class="search">
+      <input id="search-input" type="search" placeholder="Jump to a place…" autocomplete="off" spellcheck="false">
+      <button type="submit">Go</button>
+    </form>
 
     <div class="field">
       <label for="algo">Algorithm</label>
@@ -38,7 +49,6 @@
       <button id="compare">Compare all</button>
       <button id="clear">Clear</button>
     </div>
-    <button id="load" class="wide">Load roads in view</button>
 
     <p id="status" class="status"></p>
     <p id="live" class="live"></p>
@@ -49,19 +59,20 @@
     </table>
 
     <ul class="legend">
-      <li><i class="dot" style="background:#188038"></i>Start</li>
-      <li><i class="dot" style="background:#d93025"></i>Goal</li>
-      <li><i class="bar" style="background:#1a73e8"></i>Explored</li>
-      <li><i class="bar" style="background:#9334e6"></i>Explored from goal</li>
-      <li><i class="bar thick" style="background:#ff6d00"></i>Path</li>
+      <li><i class="dot start"></i>Start</li>
+      <li><i class="dot end"></i>Goal</li>
+      <li><i class="bar fwd"></i>Explored</li>
+      <li><i class="bar bwd"></i>Explored from goal</li>
+      <li><i class="bar path"></i>Path</li>
     </ul>
 
     <footer class="hint">
-      Click the map to set a start, click again for the goal. Road data © OpenStreetMap contributors.
+      Click anywhere for a start, then a goal. Routes run on the streets in view.
+      Road data © OpenStreetMap contributors.
     </footer>
   </aside>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <script type="module" src="js/app.js"></script>
 </body>
 </html>
