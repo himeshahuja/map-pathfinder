@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Map Pathfinder</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="map-wrap">
+    <div id="map"></div>
+    <canvas id="layer-explored"></canvas>
+    <canvas id="layer-top"></canvas>
+  </div>
+
+  <aside id="panel">
+    <header>
+      <h1>Map Pathfinder</h1>
+      <p class="hint">Search algorithms racing across real road networks.</p>
+    </header>
+
+    <div class="field">
+      <label for="algo">Algorithm</label>
+      <select id="algo"></select>
+      <p id="algo-desc" class="hint"></p>
+    </div>
+
+    <div class="field">
+      <label for="speed">Speed <span id="speed-val" class="muted"></span></label>
+      <input type="range" id="speed" min="1" max="10" value="5">
+    </div>
+
+    <label class="check"><input type="checkbox" id="oneway" checked> Respect one-way streets</label>
+
+    <div class="buttons">
+      <button id="run" class="primary">Run</button>
+      <button id="compare">Compare all</button>
+      <button id="clear">Clear</button>
+    </div>
+    <button id="load" class="wide">Load roads in view</button>
+
+    <p id="status" class="status"></p>
+    <p id="live" class="live"></p>
+
+    <table id="results" hidden>
+      <thead><tr><th>Algorithm</th><th>Visited</th><th>Length</th><th>Time</th></tr></thead>
+      <tbody></tbody>
+    </table>
+
+    <ul class="legend">
+      <li><i class="dot" style="background:#188038"></i>Start</li>
+      <li><i class="dot" style="background:#d93025"></i>Goal</li>
+      <li><i class="bar" style="background:#1a73e8"></i>Explored</li>
+      <li><i class="bar" style="background:#9334e6"></i>Explored from goal</li>
+      <li><i class="bar thick" style="background:#ff6d00"></i>Path</li>
+    </ul>
+
+    <footer class="hint">
+      Click the map to set a start, click again for the goal. Road data © OpenStreetMap contributors.
+    </footer>
+  </aside>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
