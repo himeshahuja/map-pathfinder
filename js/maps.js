@@ -33,6 +33,7 @@ export function createMap(el, view, theme) {
     zoom: () => map.getZoom(),
     onClick: (cb) => map.on('click', (e) => cb(e.lngLat.lat, e.lngLat.lng)),
     onView: (cb) => map.on('move', cb),
+    onMoveEnd: (cb) => map.on('moveend', cb),
     setTheme: (name) => map.setStyle(STYLES[name]),
     flyTo: (lat, lon, zoom) => map.flyTo({ center: [lon, lat], zoom, speed: 1.6 }),
 

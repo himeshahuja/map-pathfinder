@@ -268,6 +268,10 @@ function frame() {
 
 function finishRun(run, path) {
   state.run = null;
+  if (refreshPending) {
+    refreshPending = false;
+    scheduleRefresh();
+  }
   const algo = ALGORITHMS[run.key];
   const result = measure(run.key);
   state.results.set(run.key, result);
@@ -327,9 +331,9 @@ function rebuildGraph() {
 
 // Builds the graph from the road geometry in the vector tiles on screen, so
 // routing works anywhere without a separate road-data download.
-async function buildFromView() {
+async function buildFromView({ quiet = false } = {}) {
   if (state.map.zoom() < MIN_ROUTE_ZOOM) {
-    setStatus('Zoom in to street level to route.', 'warn');
+    if (!quiet) setStatus('Zoom in to street level to route.', 'warn');
     return false;
   }
   state.loading = true;
@@ -337,7 +341,7 @@ async function buildFromView() {
     await state.map.whenIdle();
     const ways = waysFromFeatures(state.map.roadFeatures());
     if (!ways.length) {
-      setStatus('No roads in view here.', 'warn');
+      if (!quiet) setStatus('No roads in view here.', 'warn');
       return false;
     }
     state.ways = ways;
@@ -347,6 +351,48 @@ async function buildFromView() {
   } finally {
     state.loading = false;
   }
+}
+
+// Whenever the view settles, rebuild the graph from the roads now on screen.
+// A route that is still fully in view is re-solved instantly on the new graph.
+let refreshTimer = 0;
+let refreshPending = false;
+
+function scheduleRefresh() {
+  clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(refreshRoads, 150);
+}
+
+async function refreshRoads() {
+  if (state.loading) return;
+  if (state.run) { refreshPending = true; return; } // finish the animation first
+  const hadRoute = !!state.path;
+  if (!await buildFromView({ quiet: true })) return;
+  if (ready()) {
+    if (hadRoute) runInstant($('algo').value);
+    else startRun($('algo').value);
+  } else if (state.startLL && state.endLL) {
+    setStatus('Part of the route is off screen. Pan back, or click a new start.');
+  }
+}
+
+// Solves without animating, for re-solving after the map moves.
+function runInstant(key) {
+  clearSearch();
+  const gen = ALGORITHMS[key].run(state.graph, state.start, state.end);
+  let res;
+  while (!(res = gen.next()).done) {
+    const e = res.value;
+    if (e.from >= 0) {
+      state.exFrom.push(e.from);
+      state.exTo.push(e.to);
+      state.exSide.push(e.side);
+    }
+  }
+  state.shownKey = key;
+  finishRun({ key, visited: state.exFrom.length + 1 }, res.value);
+  state.pathT = 1;
+  redrawAll();
 }
 
 async function loadDemo() {
@@ -528,6 +574,7 @@ function init() {
   state.map = createMap($('map'), DEFAULT_VIEW, theme);
   state.map.onClick(handleClick);
   state.map.onView(redrawAll);
+  state.map.onMoveEnd(scheduleRefresh);
   new ResizeObserver(resizeCanvases).observe($('map-wrap'));
   resizeCanvases();
   loadDemo();
