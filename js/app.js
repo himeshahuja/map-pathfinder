@@ -280,7 +280,7 @@ function failRun(run, err) {
   state.run = null;
   const algo = ALGORITHMS[run.key];
   if (err instanceof BudgetError) {
-    setStatus(`${algo.name} needed more than ${MAX_TILES} map tiles of roads. Try A* or Bidirectional Dijkstra for a trip this long.`, 'warn');
+    setStatus(`${algo.name} needed more than ${MAX_TILES} map tiles of roads.`, 'warn');
   } else {
     setStatus(`Couldn't load roads: ${err.message}`, 'error');
   }
@@ -354,7 +354,7 @@ async function compareAll() {
     if (token !== compareToken) return;
     renderResults();
   }
-  setStatus('Compared every algorithm. Click a row to replay it.');
+  setStatus('Compared every algorithm.');
 }
 
 // --- Picking points -------------------------------------------------------------
@@ -380,10 +380,10 @@ function setStart(lat, lon) {
     if (token !== clickToken) return -1;
     if (node < 0) {
       state.startLL = null;
-      setStatus('No road near there. Try another spot.', 'warn');
+      setStatus('No road near there.', 'warn');
     } else {
       state.start = node;
-      setStatus('Start set. Now click a goal, anywhere: pan, zoom or search to get there.');
+      setStatus('Now pick a goal.');
     }
     drawTop();
     return node;
@@ -399,7 +399,7 @@ async function setGoal(lat, lon) {
   if (token !== clickToken) return;
   if (startNode < 0 || node < 0) {
     state.endLL = null;
-    setStatus('No road near there. Try another spot.', 'warn');
+    setStatus('No road near there.', 'warn');
     drawTop();
     return;
   }
@@ -460,7 +460,7 @@ function renderResults() {
         : `<div class="tag worse">+${over.toFixed(over < 10 ? 1 : 0)}%</div>`;
     }
     const visited = r.visited == null ? '–' : r.visited.toLocaleString();
-    const length = r.overBudget ? '<span class="tag worse">too far</span>' : `${fmtKm(r.length)}${tag}`;
+    const length = r.overBudget ? '<span class="tag worse">hit map limit</span>' : `${fmtKm(r.length)}${tag}`;
     const ms = r.ms == null ? '–' : `${r.ms < 10 ? r.ms.toFixed(1) : Math.round(r.ms)} ms`;
 
     tr.innerHTML = `<td>${ALGORITHMS[key].name}</td><td>${visited}</td><td>${length}</td><td>${ms}</td>`;
@@ -509,7 +509,7 @@ async function searchPlace(query) {
     if (!hit) { setStatus(`Couldn't find “${query}”.`, 'warn'); return; }
     state.map.flyTo(+hit.lat, +hit.lon, 14);
     const where = hit.display_name.split(',').slice(0, 2).join(',');
-    setStatus(state.startLL && !state.endLL ? `${where}. Click the goal.` : `${where}. Click a start, then a goal.`);
+    setStatus(where);
   } catch (err) {
     setStatus(`Search failed (${err.message}).`, 'error');
   }
@@ -538,7 +538,7 @@ function initControls() {
     renderResults();
     clearSearch();
     updateButtons();
-    setStatus('Cleared. Click anywhere for a start.');
+    setStatus('');
   });
   $('oneway').addEventListener('change', async () => {
     stopRun();

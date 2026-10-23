@@ -18,10 +18,13 @@ Watch search algorithms race across real road networks.
 | Algorithm | Optimal? | Idea |
 | --- | --- | --- |
 | A* | yes | Dijkstra guided by straight-line distance to the goal |
+| Bidirectional A* | yes | A* from both ends, balanced with averaged straight-line estimates so the meeting point is on the shortest path |
+| Weighted A* | no | A* that trusts the estimate 1.6× more: far fewer nodes, slightly longer routes |
 | Dijkstra | yes | Expands outward by road distance in every direction |
 | Bidirectional Dijkstra | yes | Searches from both ends and stops where they meet |
 | Greedy best-first | no | Always heads for whatever looks closest to the goal |
 | Breadth-first search | no | Fewest road segments, ignores length |
+| Bidirectional BFS | no | Breadth-first from both ends, meeting in the middle |
 | Depth-first search | no | Follows one road as far as it goes, then backtracks |
 
 ## How it works
