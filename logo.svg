@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Map Pathfinder</title>
+  <rect width="64" height="64" rx="14" fill="#111214"/>
+  <rect x="0.75" y="0.75" width="62.5" height="62.5" rx="13.25" fill="none" stroke="#ffffff" stroke-opacity="0.1" stroke-width="1.5"/>
+  <g fill="#ffffff" fill-opacity="0.13">
+    <rect x="17" y="17" width="10" height="10" rx="2"/>
+    <rect x="37" y="17" width="10" height="10" rx="2"/>
+    <rect x="17" y="37" width="10" height="10" rx="2"/>
+    <rect x="37" y="37" width="10" height="10" rx="2"/>
+  </g>
+  <path d="M12 52 V32 H32 V12 H52" fill="none" stroke="#ffb020" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="12" cy="52" r="6" fill="#22c55e" stroke="#111214" stroke-width="2.5"/>
+  <circle cx="52" cy="12" r="6" fill="#f43f5e" stroke="#111214" stroke-width="2.5"/>
+</svg>

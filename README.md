@@ -1,3 +1,5 @@
+<img src="logo.svg" alt="" width="72">
+
 # Map Pathfinder
 
 Watch search algorithms race across real road networks.
